@@ -1,6 +1,6 @@
 const express = require('express');
 const { createContent, getContents, getContentById, updateContent, deleteContent } = require('../controllers/contentController');
-const { protect } = require('../middlewares/authMiddleware');
+const { protect } = require('../middlewares/authUserMiddleware');
 const router = express.Router();
 
 router.post('/', protect, createContent);
