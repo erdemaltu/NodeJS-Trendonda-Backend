@@ -1,84 +1,118 @@
-const Content = require('../models/Content');
+const Content = require("../models/Content");
+const slugify = require("slugify");
 
-// İçerik oluşturma
-const createContent = async (req, res) => {
-  const { title, description, category } = req.body;
+exports.createContent = async (req, res, next) => {
+    try {
+      const { title, description, content, category, tags, status } = req.body;
+  
+      // Slug oluştur ve çakışmayı önlemek için kontrol et
+      let slug = slugify(title, { lower: true, strict: true });
+      const existingContent = await Content.findOne({ slug });
+      if (existingContent) {
+        slug = `${slug}-${Date.now()}`;
+      }
+  
+      const newContent = new Content({
+        title,
+        slug,
+        description,
+        content,
+        category,
+        tags,
+        status,
+        author: req.user._id, // Mevcut kullanıcıyı bağla
+      });
+  
+      await newContent.save();
+  
+      res.status(201).json({ message: 'İçerik başarıyla oluşturuldu', content: newContent });
+    } catch (error) {
+        next(error);
+    }
+  };
 
+// Tüm içerikleri listeleme
+exports.getAllContents = async (req, res, next) => {
   try {
-    const content = await Content.create({
-      title,
-      description,
-      category,
-      user: req.user.id,
-    });
+    const contents = await Content.find()
+      .populate("author", "name email")
+      .populate("category", "name slug")
+      .populate("tags", "name slug");
 
-    res.status(201).json(content);
+    res.status(200).json(contents);
   } catch (error) {
-    res.status(500).json({ message: error.message });
+    next(error);
   }
 };
 
-// İçerikleri listeleme
-const getContents = async (req, res) => {
+// Tek bir içeriği getirme
+exports.getContentById = async (req, res, next) => {
   try {
-    const contents = await Content.find().populate('user', 'name email');
-    res.json(contents);
-  } catch (error) {
-    res.status(500).json({ message: error.message });
-  }
-};
+    const content = await Content.findById(req.params.id)
+      .populate("author", "name email")
+      .populate("category", "name slug")
+      .populate("tags", "name slug");
 
-// İçeriği detaylı görüntüleme
-const getContentById = async (req, res) => {
-  try {
-    const content = await Content.findById(req.params.id).populate('user', 'name email');
-    if (!content) return res.status(404).json({ message: 'İçerik bulunamadı' });
-    res.json(content);
-  } catch (error) {
-    res.status(500).json({ message: error.message });
-  }
-};
-
-// İçeriği düzenleme
-const updateContent = async (req, res) => {
-  const { title, description, category } = req.body;
-
-  try {
-    const content = await Content.findById(req.params.id);
-
-    if (!content) return res.status(404).json({ message: 'İçerik bulunamadı' });
-
-    if (content.user.toString() !== req.user.id) {
-      return res.status(401).json({ message: 'Yetkiniz yok' });
+    if (!content) {
+      return res.status(404).json({ message: "İçerik bulunamadı" });
     }
 
-    content.title = title || content.title;
-    content.description = description || content.description;
-    content.category = category || content.category;
+    // Görüntüleme sayısını artır
+    content.viewCount += 1;
+    await content.save();
 
-    const updatedContent = await content.save();
-    res.json(updatedContent);
+    res.status(200).json(content);
   } catch (error) {
-    res.status(500).json({ message: error.message });
+    next(error);
   }
 };
 
-// İçeriği silme
-const deleteContent = async (req, res) => {
+// İçerik güncelleme
+exports.updateContent = async (req, res, next) => {
   try {
-    const content = await Content.findById(req.params.id);
+    const { title, description, content, category, tags, status } = req.body;
 
-    if (!content) return res.status(404).json({ message: 'İçerik bulunamadı' });
+    // Slug yeniden oluşturulabilir
+    const slug = title
+      ? slugify(title, { lower: true, strict: true })
+      : undefined;
 
-    if (content.user.toString() !== req.user.id) {
-      return res.status(401).json({ message: 'Yetkiniz yok' });
+    const updatedContent = await Content.findByIdAndUpdate(
+      req.params.id,
+      {
+        title,
+        slug,
+        description,
+        content,
+        category,
+        tags,
+        status,
+        updatedAt: Date.now(),
+      },
+      { new: true }
+    );
+
+    if (!updatedContent) {
+      return res.status(404).json({ message: "İçerik bulunamadı" });
     }
 
-    await content.deleteOne();
-    res.json({ message: 'İçerik silindi' });
+    res.status(200).json(updatedContent);
   } catch (error) {
-    res.status(500).json({ message: error.message });
+    next(error);
   }
 };
 
-module.exports = { createContent, getContents, getContentById, updateContent, deleteContent };
+// İçerik silme
+exports.deleteContent = async (req, res, next) => {
+  try {
+    const deletedContent = await Content.findByIdAndDelete(req.params.id);
+
+    if (!deletedContent) {
+      return res.status(404).json({ message: "İçerik bulunamadı" });
+    }
+
+    res.status(200).json({ message: "İçerik silindi" });
+  } catch (error) {
+    next(error);
+  }
+};
